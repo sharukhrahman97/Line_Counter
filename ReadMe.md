@@ -26,9 +26,12 @@
 .\test\ffmpeg -re -stream_loop -1 -i .\test\cam2.mp4 -c copy -f rtsp rtsp://localhost:8555/cam2
 ```
 
-# To run
+# To install
 
 > python -m pip install --upgrade pip wheel setuptools
+> pip install -r .\requirements.txt
+
+# To run
 
 > python main.py
 
