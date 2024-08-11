@@ -60,7 +60,7 @@ class RunInference:
 
         line_points = [(0, cap_height / 2), (cap_width, cap_height / 2)]
 
-        self.classes_to_count = [[0] for _ in range(len(self.sources.captures))]
+        self.classes_to_count = [0]
         self.counter = [
             ObjectCounter(
                 view_img=False,
@@ -91,7 +91,7 @@ class RunInference:
                 frames[i],
                 persist=True,
                 show=False,
-                classes=self.classes_to_count[i],
+                classes=self.classes_to_count,
                 verbose=False,
             )
             frame = self.counter[i].start_counting(frames[i], tracks)
