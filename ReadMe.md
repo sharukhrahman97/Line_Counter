@@ -28,7 +28,7 @@
 
 # To install
 
-> python -m pip install --upgrade pip wheel setuptools
+> pip install --upgrade pip wheel setuptools
 > pip install -r .\requirements.txt
 
 # To run

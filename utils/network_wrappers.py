@@ -98,7 +98,6 @@ class Detector(IEModel, DetectorInterface):
 
         return detections
 
-
 def _remove_batch_dim_from_each_element_because_outputs_itself_is_a_list_representing_a_batch(outputs):
     for idx, obj in enumerate(outputs):
         assert 1 == obj.shape[0]
@@ -289,3 +288,4 @@ class DetectionsFromFileReader(DetectorInterface):
                         valid_detections.append((bbox, score))
             output.append(valid_detections)
         return output
+

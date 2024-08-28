@@ -6,12 +6,12 @@ import torch
 import numpy as np
 from pathlib import Path
 import openvino as ov
-from ultralytics.solutions import ObjectCounter
-from ultralytics import YOLO
+from object_counter import ObjectCounter
 from ultralytics import YOLO
 from utils.video import MulticamCapture
 from utils.visualization import get_target_size
 from threading import Thread
+from util import Application
 
 
 class FramesThreadBody:
@@ -35,10 +35,11 @@ class FramesThreadBody:
 
 
 class RunInference:
-    def __init__(self, inputs, device="CPU", out_feed=False):
+    def __init__(self, inputs, device="CPU", out_feed=False, application="Count"):
         self.sources = MulticamCapture(inputs, False)
         self.device = device
         self.out_feed = out_feed
+        self.application = application
 
         models_dir = Path("./models")
         models_dir.mkdir(exist_ok=True)
@@ -51,6 +52,12 @@ class RunInference:
         self.det_model_path = (
             models_dir / f"{DET_MODEL_NAME}_openvino_model/{DET_MODEL_NAME}.xml"
         )
+
+        self.face_model_path = (
+            "intel/face-detection-retail-0005/FP32/face-detection-retail-0005.xml"
+        )
+        self.age_gender_model_path = "intel/age-gender-recognition-retail-0013/FP32/age-gender-recognition-retail-0013.xml"
+
         if not self.det_model_path.exists():
             self.det_model.export(format="openvino", dynamic=True, half=True)
 
@@ -58,21 +65,10 @@ class RunInference:
         cap_width = self.sources.captures[0].cap.get(cv2.CAP_PROP_FRAME_WIDTH)
         cap_height = self.sources.captures[0].cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-        line_points = [(0, cap_height / 2), (cap_width, cap_height / 2)]
+        self.line_points = [(0, cap_height / 2), (cap_width, cap_height / 2)]
 
         self.classes_to_count = [0]
-        self.counter = [
-            ObjectCounter(
-                view_img=False,
-                reg_pts=line_points,
-                classes_names=self.det_model.names,
-                draw_tracks=True,
-                line_thickness=1,
-                view_in_counts=True,
-                view_out_counts=True,
-            )
-            for _ in range(len(self.sources.captures))
-        ]
+        self.counter = []
 
         self.thread_body = FramesThreadBody(
             self.sources, max_queue_length=len(self.sources.captures) * 2
@@ -114,19 +110,26 @@ class RunInference:
         self.frames_thread.join()
         in_counts = []
         out_counts = []
+        gender_counts = []
         for i in range(len(self.sources.captures)):
             in_counts.append(self.counter[i].in_counts)
             out_counts.append(self.counter[i].out_counts)
+            gender_counts.append(self.counter[i].age_gender_counts)
             self.sources.captures[i].cap.release()
         cv2.destroyAllWindows()
         print("in_count", in_counts)
         print("out_count", out_counts)
-        return (in_counts, out_counts)
+        print("gender_count", gender_counts)
+        return (in_counts, out_counts, gender_counts)
 
     def start_inference(self):
         core = ov.Core()
 
         det_ov_model = core.read_model(self.det_model_path)
+
+        face_model = core.read_model(self.face_model_path)
+        age_gender_model = core.read_model(self.age_gender_model_path)
+
         ov_config = {}
 
         if self.device != "CPU":
@@ -136,6 +139,26 @@ class RunInference:
         ):
             ov_config = {"GPU_DISABLE_WINOGRAD_CONVOLUTION": "YES"}
         compiled_model = core.compile_model(det_ov_model, self.device, ov_config)
+        face_compiled_model = core.compile_model(face_model, self.device, ov_config)
+        age_gender_compiled_model = core.compile_model(
+            age_gender_model, self.device, ov_config
+        )
+
+        self.counter = [
+            ObjectCounter(
+                view_img=False,
+                reg_pts=self.line_points,
+                classes_names=self.det_model.names,
+                draw_tracks=True,
+                line_thickness=1,
+                view_in_counts=True,
+                view_out_counts=True,
+                face_compiled_model=face_compiled_model,
+                age_gender_compiled_model=age_gender_compiled_model,
+                application=self.application,
+            )
+            for _ in range(len(self.sources.captures))
+        ]
 
         def infer(*args):
             result = compiled_model(args)
@@ -175,9 +198,13 @@ class RunInference:
 
 
 def main():
-    inputs = ["test/cam1.mp4", "test/cam2.mp4"]
+    inputs = ["test/cam3.mp4"]
+    # inputs = ["test/cam1.mp4", "test/cam2.mp4"]
     # inputs = ["rtsp://localhost:8554/cam1", "rtsp://localhost:8555/cam2"]
-    RunInference(inputs=inputs, out_feed=True).start_inference()
+    # * "Count" "Gender" "All"
+    RunInference(
+        inputs=inputs, out_feed=True, application=Application.COUNT
+    ).start_inference()
 
 
 if __name__ == "__main__":
